@@ -1,0 +1,318 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage[british]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper, total={6.5in, 10in}]{geometry}
+\usepackage{booktabs}\usepackage{url}
+\usepackage{tikz}
+\usepackage{graphicx} 
+\usepackage{pgfplots}
+\usepackage{listings}
+\usepackage[bottom]{footmisc}
+\usepackage{titling}
+\usepackage{bbm}
+\usepackage{bm}
+\usepackage{cancel}
+
+\usepackage[ruled,linesnumbered]{algorithm2e}
+
+\usepackage[font=small,labelfont=bf]{caption} % Required for specifying captions to tables and figures
+\usepackage[subrefformat=parens]{subcaption}
+
+\DeclareSymbolFont{rsfs}{U}{rsfs}{m}{n}
+\DeclareSymbolFontAlphabet{\mathscrsfs}{rsfs}
+
+\setlength{\parindent}{0pt}
+
+\makeatletter
+\setlength{\@fptop}{0pt}
+\makeatother
+
+\title{\vspace{-2.3em}\textbf{Shape Optimisation with PDE Constraints}\vspace{-0.4cm}}
+\author{Mike Fuller (\url{fuller@maths.ox.ac.uk})\\ Supervised by Dr Alberto Paganini (\url{paganini@maths.ox.ac.uk})}
+\date{\today}
+
+\usepackage[light,math]{tgheros}
+\usepackage[T1]{fontenc}
+
+\usepackage{amsmath,amsthm,amssymb}
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+\renewcommand*{\thefootnote}{\fnsymbol{footnote}}
+
+\begin{document}
+\maketitle
+
+\vspace{15mm}
+
+
+
+\vspace{22mm}
+
+\textbf{Abstract:} Shape optimisation is typically concerned with finding the shape which is optimal in the sense that it minimises a certain cost functional while satisfying given constraints. Often we find that the functional being solved depends on the solution of a PDE constraint.
+
+\vspace{3mm}
+
+In this report we briefly discuss unconstrained optimisation methods\footnote{One method we will explore is the \textit{Steepest Descent} method; an example using \url{gradientDescentDemo} from the Machine Learning Toolbox is pictured below the title. \textsc{Matlab} code by \textit{Roger Jang} and \textit{MIR Lab}, available at \url{mirlab.org/jang/matlab/toolbox/machineLearning}} before focussing on a shape optimisation test case that, despite its relative simplicity, exhibits an unexpected and interesting behaviour: solving this problem via Newton's method with a \textit{truncated} second shape derivative performs better than using full second order information. We perform numerical (and some theoretical) investigations to try to shed light on this unexpected behaviour.
+
+\newpage
+
+\tableofcontents
+
+\newpage
+
+\section{Unconstrained Optimisation}
+
+We first recap on some iterative methods for solving unconstrained optimisation problems.
+
+\subsection{Setting the Scene}
+
+Let $f:\mathbb{R}^n\rightarrow\mathbb{R}$ be a function. Suppose we want to find a value $x^*$ such that $f$ is minimal, i.e $$x^*\in\argmin_{x} f(x).$$ We can find such a value by means of an iterative algorithm. That is, given an initial guess $x^{(0)}$ for $x^*$, we construct a \textit{minimising sequence} $(x^{(k)})$ of points such that $$f(x^{(k)})\longrightarrow f(x^*) \quad \text{as }k\rightarrow\infty.$$ Often we only require an approximate solution, so we can reduce computational effort by choosing a tolerance $\varepsilon>0$ such that when $f(x^{(k)})-f(x^*)\leqslant \varepsilon$, we terminate the algorithm.
+
+
+
+\subsection{Descent Methods}
+
+The minimising sequences we are going to discuss in this section are all of the form $$x^{(k+1)}=x^{(k)}+t^{(k)} \Delta x^{(k)}$$
+\vspace{-1mm}where
+\begin{itemize}
+    \item $\Delta x^{(k)}$ represents a \textit{search direction} - which direction we travel in to approach $x^*$,
+    \item $t^{(k)}\geqslant 0$ represents a \textit{step length} - how far we travel along the vector $\Delta x^{(k)}$.
+\end{itemize}
+Recall that our aim is to minimise $f$, so we would like the sequence to have the property \begin{align}f(x^{(k+1)})<f(x^{(k)})\end{align} for all $k$, unless $x^{(k)}$ is optimal. If $f$ is differentiable, we can Taylor expand up to first-order and write $$f(x^{(k+1)})=f(x^{(k)}+t^{(k)}\Delta x^{(k)})\approx f(x^{(k)})+t^{(k)}\text{d}f(x^{(k)},\Delta x^{(k)})$$ where $\text{d}f$ denotes the \textit{directional derivative} $$\text{d}f(x,v):=\lim_{t\rightarrow 0}\dfrac{f(x+tv)-f(x)}{t}.$$ Hence, if $x^{(k)}$ is not optimal (so that $t^{(k)}\neq 0$), we can ensure (1) holds up to first-order if \begin{align}\text{d}f(x^{(k)},\Delta x^{(k)})<0.\end{align} A search direction $\Delta x^{(k)}$ such that (2) holds is called a \textit{descent direction}. 
+
+\vspace{3mm}A generic descent method then goes as follows:
+
+\vspace{3mm}
+
+\colorbox{blue!10}{\begin{algorithm}[H]\DontPrintSemicolon
+ 
+ \textbf{Given} starting point $x$
+ 
+    \Repeat{stopping criterion satisfied}{
+      (1) Determine \textit{descent direction}, $\Delta x$\\
+      (2) Choose \textit{step size}, $t>0$\\
+      (3) Set $x \leftarrow x+t\Delta x$}
+
+\end{algorithm}}
+
+\newpage
+
+At the moment this is rather vague. We have a few questions to answer:
+\begin{itemize}
+    \item How do we choose the step size?
+    \item What is the descent direction?
+    \item When do we stop the algorithm?
+\end{itemize}
+
+
+
+\subsection{Line Search}
+
+To answer the first question, we discuss two methods of deciding the step size, called \textit{exact line search (ELS)} and \textit{backtracking line search (BLS)}. Here we assume that $\Delta x$ is a descent direction.
+
+\vspace{3mm}
+
+In ELS, we choose $t$ such that $f$ is minimised along the ray $\{x+t\Delta x:t\geqslant 0\}$, i.e $$t=\argmin_{s\geqslant 0} f(x+s\Delta x).$$ It may be difficult to find $t$ exactly, so it is generally cost effective to choose a $t$ value such that $f$ is only approximately minimised along the ray. For this reason we may choose to apply BLS, which generates the step size by the following algorithm:
+
+\vspace{3mm}
+
+\colorbox{blue!10}{\begin{algorithm}[H]\DontPrintSemicolon
+
+\caption{Backtracking Line Search}
+ 
+ \textbf{Given} descent direction $\Delta x$, $\alpha \in (0,0.5), \beta \in (0,1)$
+ 
+ $t:=1$
+ 
+    \While{\upshape$f(x+t\Delta x)>f(x)+\alpha t \,\text{d}f(x,\Delta x)$}{
+      Set $t \leftarrow \beta t$}
+
+\end{algorithm}}
+
+\vspace{3mm}
+
+The resulting value of $t$ is chosen as the step size. The line search is called "backtracking" as it starts with unit step size, then reduces it by the factor $\beta$ until the stopping criterion $$f(x+t\Delta x)>f(x)+\alpha t \,\text{d}f(x,\Delta x)$$ holds. Since $\Delta x$ is a descent direction, we have $\text{d}f(x,\Delta x)<0$, so $$f(x+t\Delta x) \approx f(x)+t\,\text{d}f(x,\Delta x) < f(x)+\alpha t\,\text{d}f(x,\Delta x) $$ for small enough $t$, demonstrating that BLS eventually terminates. The choice of parameters $\alpha,\beta$ has a noticeable but not dramatic effect on convergence (see \cite{convex}); ELS can sometimes improve convergence rate but not dramatically. It is generally not worth the computational effort of using ELS.
+
+\subsection{Steepest Descent}
+
+We can find a descent direction by analysing the Taylor expansion of $f(x+\Delta x)$ about $x$ up to first-order. The approximation is $$f(x+\Delta x)\approx f(x) +\text{d}f(x,\Delta x)$$ so we find the direction of \textit{steepest descent} when we minimise the directional derivative. We define a \textit{normalised steepest descent direction} $\Delta x_{\text{nsd}}$ as a descent direction of unit length that minimises $\text{d}f(x,\Delta x)$, i.e $$\Delta x_{\text{nsd}}\in \argmin_{||\Delta x||= 1} \,\text{d}f(x,\Delta x)$$ for some norm $||\cdot||$ on $\mathbb{R}^n$. 
+
+\newpage
+
+To piece together the \textit{Steepest Descent} method, it will be useful to introduce the concept of inner products and gradients, particularly when it comes to defining stopping criteria. Let $V$ be a real vector space. An \textit{inner product} $\langle\cdot,\cdot\rangle:V^2\rightarrow \mathbb{R}$ is a function that satisfies the following properties:
+\begin{itemize}
+    \item \textit{Linearity:} $\langle \alpha u + \beta v, w\rangle =\alpha \langle u,w\rangle + \beta \langle v, w\rangle \quad \forall u,v,w \in V, \, \alpha,\beta\in\mathbb{R}$
+    \item \textit{Symmetry:} $\langle u,v\rangle = \langle v,u \rangle \quad \forall u,v\in V$
+    \item \textit{Positive definitenesss:} $\langle u,u\rangle \geqslant 0 \quad \forall u\in V, \quad \langle u,u\rangle =0 \Longleftrightarrow u=0.$
+\end{itemize}
+
+It follows from the first two properties that $\langle\cdot,\cdot\rangle$ is \textit{bilinear}.
+
+\vspace{3mm}
+
+We call $\nabla f(x)$ the \textit{gradient} of $f$ at $x$ with respect to an inner product $\langle \cdot ,\cdot\rangle$ if $$\langle \nabla f(x),v\rangle=\text{d}f(x,v) \quad \forall v.$$
+
+We occasionally write $\nabla_{\langle\cdot,\cdot\rangle} f(x)$ to make it clear what the associated inner product is.
+
+\vspace{3mm}
+
+\textbf{Lemma 1.1:} If a norm $||\cdot||$ is induced by an inner product $\langle\cdot,\cdot\rangle$, i.e $||v||=\sqrt{\langle v,v\rangle}$, then \begin{align}\Delta x_{\text{nsd}}=-\dfrac{\nabla f(x)}{||\nabla f(x)||}.\end{align}
+
+\vspace{3mm}
+
+\textbf{Proof:} We use the method of Lagrange multipliers. Let $$L(\Delta x,\lambda):=\text{d}f(x,\Delta x)+\frac{\lambda}{2}(||\Delta x||^2-1).$$ Then by definition of $\Delta x_{\text{nsd}}$, 
+\begin{align*}
+&\partial_{\Delta x}L(\Delta x_{\text{nsd}},v)=\text{d}f(x,v)+\lambda \langle \Delta x_{\text{nsd}},v\rangle=0 \quad \forall v \\ \Longleftrightarrow \quad& \langle \lambda \Delta x_{\text{nsd}},v\rangle=-\text{d}f(x,v) \quad \forall v \\ \Longleftrightarrow \quad& \lambda \Delta x_{\text{nsd}}=-\nabla f(x).
+\end{align*}
+Taking norms of both sides, and using the fact that $||\Delta x_{\text{nsd}}||=1$, we obtain $|\lambda|=||\nabla f(x)||$. The result follows, using the fact that $\Delta x_{\text{nsd}}$ is a steepest descent direction.
+
+$\hfill\square$
+
+\vspace{3mm}
+
+Geometrically speaking, we see that $\Delta x_{\text{nsd}}$ is a step in the unit ball of $||\cdot||$ which extends farthest in the direction of $-\nabla f(x)$. It is more convenient in practice to use an unnormalised descent direction $$\Delta x_{\text{sd}}:=||\nabla f(x)||_*\Delta x_{\text{nsd}}$$ where $||\cdot||_*$ denotes the \textit{dual norm} $$||v||_*:=\sup_{||x||\leqslant 1} v^Tx.$$ We find that $\Delta x_{\text{sd}}$ is simply the unnormalised version of (3), that is $$\Delta x_{\text{sd}}=-\nabla_{\langle\cdot,\cdot\rangle} f(x)$$ 
+
+and we arrive at the \textit{Steepest Descent} method, which uses $\Delta x_{\text{sd}}$ as a descent direction:
+
+\vspace{3mm}
+
+\colorbox{blue!10}{\begin{algorithm}[H]\DontPrintSemicolon
+
+\caption{Steepest Descent}
+ 
+ \textbf{Given} starting point $x$
+ 
+    \Repeat{stopping criterion satisfied}{
+      (1) Set $\Delta x \leftarrow \Delta x_{\text{sd}}$\\
+      (2) Choose $t$ via ELS/BLS\\
+      (3) Set $x \leftarrow x+t\Delta x$}
+
+\end{algorithm}}
+
+\newpage
+
+To define a stopping criterion, recall that when $x^*$ is optimal we have $$\text{d}f(x^*,v)=0 \quad \forall v$$ so for a sufficiently smooth $f$, we expect the gradient to be small for $x\approx x^*$. For this reason, we can define a stopping criterion of the form $$||\nabla f(x)|| \leqslant \varepsilon$$ for some chosen small $\varepsilon >0$. Most practical uses of Steepest Descent check the stopping criterion after the first step.
+
+\subsection{Newton's Method}
+
+Which inner product do we use to define $\Delta x_{\text{sd}}$? An interesting choice, which forms the basis of \textit{Newton's Method}, is to consider the inner product induced by the second derivative \begin{align*}\text{d}^2f(x,u,v):=\lim_{t\rightarrow 0}\dfrac{\text{d}f(x+tv,u)-\text{d}f(x,u)}{t}.\end{align*}
+
+If it exists, we can extend our Taylor approximation up to second-order to get $$f(x+\Delta x)\approx f(x) +\text{d}f(x,\Delta x)+\frac{1}{2}\,\text{d}^2 f(x, \Delta x, \Delta x)=:g(\Delta x).$$ 
+
+If $\text{d}^2f(x,\cdot,\cdot)$ is positive definite then $g$ is \textit{strictly convex}\footnote{A function $g$ is said to be \textit{strictly convex} if the line segment connecting any two distinct points on the surface of $g$ lies strictly above $g$, except at the endpoints.}, thus has a unique minimiser $\Delta x_{\text{nt}}$, called the \textit{Newton step}. Since the second derivative exists, $\text{d}^2f(x,\cdot,\cdot)$ is also symmetric and linear, hence an inner product. By minimality, the Newton step must satisfy
+\begin{align*}
+    &\text{d}g(\Delta x_{\text{nt}},v)=0\quad \forall v \\ \Longleftrightarrow \quad & \text{d}f(x,v)+\text{d}^2(x,\Delta x_{\text{nt}},v)=0 \quad \forall v \\ \Longleftrightarrow \quad & \text{d}^2(x,\Delta x_{\text{nt}},v)=-\text{d}f(x,v) \quad \forall v
+\end{align*}
+so $\Delta x_{\text{nt}}$ is the negative gradient with respect to the inner product induced by $\text{d}^2f$, that is,
+$$\Delta x_{\text{nt}}=-\nabla_{\text{d}^2f(x,\cdot,\cdot)}f(x).$$
+
+If $f$ is quadratic, then $f(\Delta x_{\text{nt}})=g(\Delta x)$ exactly, so $x+\Delta x_{\text{nt}}$ is the \textit{exact} minimiser of $f$. Hence it should also be a very good estimate for $x^*$ if $f$ is approximately quadratic. Since $f$ is assumed to be twice continuously differentiable, the quadratic model of $f$ is very accurate for $x$ near $x^*$, so $x+\Delta x_{\text{nt}}$ is a very good estimate for $x^*$. 
+
+\vspace{3mm}
+
+Before we introduce \textit{Newton's method}, we construct a stopping criterion using the \textit{Newton decrement} $$\lambda(x):=\sqrt{\text{d}f(x,\Delta x_{\text{nt}})}.$$
+
+\textbf{Lemma 1.2:} $\lambda(x)^2/2$ estimates the error $f(x)-f(x^*)$, based on the quadratic approximation of $f$.
+
+\vspace{3mm}
+
+\textbf{Proof:} The error based on the quadratic approximation is \begin{align*}
+f(x)-\inf_y g(y)=\,f(x)-g(\Delta x_{\text{nt}})
+=\,&f(x)-\left(f(x)+\cancel{\text{d}f(x,\Delta x_{\text{nt}})}+\frac{1}{2}\text{d}^2f(x,\Delta x_{\text{nt}},\Delta x_{\text{nt}})\right)\\
+=\,&f(x)-\left(f(x)-\frac{1}{2}\text{d}f(x,\Delta x_{\text{nt}})\right)\\
+=\,&\dfrac{1}{2}\lambda(x)^2.
+\end{align*}$\hfill\square$
+
+\newpage
+
+We use this as a stopping criterion for Newton's Method, which goes as follows:
+ 
+\vspace{3mm}
+
+\colorbox{blue!10}{\begin{algorithm}[H]\DontPrintSemicolon
+
+\caption{Newton's Method}
+
+\SetKwBlock{Repeat}{repeat}{}
+ 
+ \textbf{Given} starting point $x$, tolerance $\varepsilon>0$
+ 
+    \Repeat{
+      (1) Set $\Delta x\leftarrow \Delta x_{\text{nt}}$\\
+      (2) Set $\lambda\leftarrow \lambda(x)$\\
+      (3) \textbf{Stop} if $\lambda^2/2\leqslant \varepsilon$\\
+      (4) Choose $t$ via BLS\\
+      (5) Set $x \leftarrow x+t\Delta x$}
+
+\end{algorithm}}
+
+\vspace{3mm}
+
+Observe that this is more or less a general descent method, with the difference that the stopping criterion is checked after computing $\Delta x_{\text{nt}}$, rather than after updating the value of $x$.
+
+\vspace{3mm}
+
+Newton's Method has \textit{quadratic convergence} near $x^*$ (see \cite{convex}). Roughly speaking, this means that the number of correct digits doubles after each iteration. Newton's Method also scales with the size of the problem: its performance in $\mathbb{R}^{10000}$ is similar to problems in $\mathbb{R}^{10}$ say, with only a modest increase in the number of iterations.
+
+\vspace{3mm}
+
+A pitfall of Newton's Method is the cost of computing $\Delta x_{\text{nt}}$, which requires solving a system of linear equations. \textit{Quasi-Newton} methods require less cost to form the search direction, sharing some advantages of Newton's Method such as rapid convergence near $x^*$, but we will not discuss such methods here.
+
+\newpage
+
+\section{Shape Differentiation}
+
+Let $f:\mathbb{R}^n\rightarrow \mathbb{R}$ be a function. Provided $f$ is smooth, we can differentiate to find its minimum values; in this section we extend the notion of differentiation of functions to \textit{shape differentiation} of domains, with the aim of using these shape derivatives to find the domain $\Omega^*$ in a collection of admissible shapes $\mathcal{U}_{\text{ad}}$ which minimises the cost functional $$\mathcal{J}[\Omega]:=\int_\Omega f \, \text{d}x.$$ Writing this as we did for $x^*$ in Section 1.1, the above is equivalent to $$\Omega^* \in \argmin_{\Omega \in \mathcal{U}_{\text{ad}}} \mathcal{J}[\Omega].$$
+
+\subsection{Defining the Shape Derivative}
+
+Let $T:\mathbb{R}^n\rightarrow\mathbb{R}^n$ be a sufficiently smooth vector field. Then $$\mathcal{J}[T(\Omega)]=\int_{T(\Omega)}f\,\text{d}x=\int_\Omega (f\circ T)|\det DT|\, \text{d}x$$ where $DT$ denotes the \textit{Jacobian} of $T$. Note that $T(\Omega)\neq \Omega$ in general, and similarly $\mathcal{J}[T(\Omega)]\neq \mathcal{J}[\Omega]$.
+
+\vspace{3mm}
+
+Furthermore let $V:\mathbb{R}^n\rightarrow \mathbb{R}^n$. We adopt the notation $$\Big\langle \dfrac{\text{d}}{\text{d}T}\,g[T],V\Big\rangle:=\lim_{t\rightarrow 0} \dfrac{g[T+tV]-g[T]}{t}$$ noting that this is different to the inner product notation used in Section 1.4. We then define the \textit{shape derivative} of $\mathcal{J}$ at $\Omega$ in the direction $V$ as $$\text{d}\mathcal{J}(\Omega,V):=\Big\langle\dfrac{\text{d}}{\text{d}T}\,\mathcal{J}[T(\Omega)],V\Big\rangle\Big|_{T=I}$$ where $I$ is the identity map. Therefore,
+\begin{align*}
+    \text{d}\mathcal{J}(\Omega,V)&=\Big\langle\dfrac{\text{d}}{\text{d}T}\,\left(\int_\Omega (f\circ T)|\det DT|\, \text{d}x\right),V\Big\rangle\Big|_{T=I}\\
+    &=\int_\Omega\Big\langle\dfrac{\text{d}}{\text{d}T}( (f\circ T)\det DT),V\Big\rangle\Big|_{T=I}\,\text{d}x.
+\end{align*}
+
+We use this to prove two identities of the shape derivative.
+
+\vspace{3mm}
+
+\textbf{Theorem 2.1:} $$ \text{d}\mathcal{J}(\Omega,V)=\int_\Omega \nabla f\cdot V +f \nabla \cdot V\,\text{d}x.$$
+
+\textbf{Proof:} By the product rule,
+$$\text{d}\mathcal{J}(\Omega,V)=\int_\Omega\left\{\Big\langle\dfrac{\text{d}}{\text{d}T}( f\circ T),V\Big\rangle\det DT+\Big\langle\dfrac{\text{d}}{\text{d}T} \det DT,V\Big\rangle(f\circ T)\,\right\}\Big|_{T=I}\,\text{d}x.$$
+
+From the first term, we have $$\Big\langle\dfrac{\text{d}}{\text{d}T}( f\circ T),V\Big\rangle=\dfrac{\text{d}}{\text{d}t}(f\circ (T+tV))$$
+
+\newpage
+
+\textbf{Theorem 2.2:} $$\text{d}\mathcal{J}(\Omega,V)=\int_{\partial\Omega} f(V \cdot n)\,\text{d}S.$$
+
+\textbf{Proof:} Follows immediately from Theorem 2.2 and the Divergence Theorem.$\hfill\square$
+
+\newpage
+
+\section{Shape Optimisation Test Case}
+
+\newpage
+
+\section{Conclusion}
+
+
+
+
+\newpage
+
+\begin{thebibliography}{9}
+
+\bibitem{convex} 
+Stephen Boyd and Lieven Vandenberghe. \textit{Convex Optimisation}. Cambridge University Press, 2004. \url{web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf}
+ 
+\end{thebibliography}
+
+\end{document}
